@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <assert.h>
+#include <stdlib.h>
 #include "Lex.h"
 
 void PrintToken(int tok) {
@@ -37,21 +38,28 @@ void PrintToken(int tok) {
 int main() {
   // 【终极全功能测试】
   // 关键字 + 数字 + 比较符 + 赋值符 + 字符串 + 换行 + 缩进
-  char *input =
-    "function main var x := 100\n"
-    "if 55 <> 66 then x <= 999 else x >= 888\n"
-    "while i to 10 do break end\n"
-    "let type array of int in nil end\n"
-    "1 22 333 4444 99999\n"
-    "< > <= >= <> :=\n"
-    "\"hello world\" \"test123\" \"abc\"\n"
-    "id123 varxy ifx thenx elseend";
+  /* char *input = */
+  /*   "function main var x := 100\n" */
+  /*   "if 55 <> 66 then x <= 999 else x >= 888\n" */
+  /*   "while i to 10 do break end\n" */
+  /*   "let type array of int in nil end\n" */
+  /*   "1 22 333 4444 99999\n" */
+  /*   "< > <= >= <> :=\n" */
+  /*   "\"hello world\" \"test123\" \"abc\"\n" */
+  /*   "id123 varxy ifx thenx elseend"; */
+  FILE *i = fopen("merge.tig", "r");
+  fseek(i, 0L, SEEK_SET);
+  fseek(i, 0L, SEEK_END);
+  long s = ftell(i);
+  fseek(i, 0L, SEEK_SET);
+  char *cont = malloc(s);
+  fread(cont, s, 1, i);
 
-  printf("=== 开始词法分析 ===\n\n");
+  /* printf("=== 开始词法分析 ===\n\n"); */
 
-  GenTokens(input);
+  GenTokens(cont);
 
-  printf("=== 分析结果 ===\n");
+  /* printf("=== 分析结果 ===\n"); */
   for (int i = 0; i < tokens_size; ++i) {
     struct Token *t = &tokens[i];
     printf("%02d: ", i);

@@ -122,9 +122,11 @@ void GenTokens(char *str) {
     // :=
     if (c == ':') {
       c = *++str;
-      assert(c == '=');
-      t->tok = TOK_ASSIGN;
-      c = *++str;
+      if (c == '=') {
+	t->tok = TOK_ASSIGN;
+	c = *++str;
+      } else
+	t->tok = ':';
       continue;
     }
 
@@ -132,7 +134,7 @@ void GenTokens(char *str) {
     if (c == '"') {
       c = *++str;
       p = str;
-redo:
+    redo:
       /* if (c == '\') */
       if (c != '"') {
         c = *++str;
