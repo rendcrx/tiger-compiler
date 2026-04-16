@@ -11,14 +11,14 @@ static void nexttok() {
   if (i >= tokens_size)
     curtok = NULL;
   else
-    curtok = tokens[i++];
+    curtok = &tokens[i++];
 }
 
 static void expecttok(int class) {
   if (i >= tokens_size)
     curtok = NULL;
   else
-    curtok = tokens[i++];
+    curtok = &tokens[i++];
   assert(curtok->tok == class);
 }
 
@@ -26,7 +26,7 @@ static struct Token *peer() {
   if (i+1 >= tokens_size)
     return NULL;
   else
-    return tokens[i+1];
+    return &tokens[i+1];
 }
 
 struct A_Program *A_Program_Epsilon() {
@@ -312,7 +312,7 @@ struct A_Lvalue_Tail *A_Lvalue_Tail_Id(char *id, struct A_Lvalue_Tail *tail) {
   struct A_Lvalue_Tail *l = malloc(sizeof *l);
   l->kind = A_LVALUE_TAIL_ID;
   strcpy(l->u.id.id, id);
-  l->u.id.id.tail = tail;
+  l->u.id.tail = tail;
   return l;
 }
 
@@ -893,8 +893,8 @@ struct A_Dec *ParseDec() {
 }
 
 struct A_Tydecs *ParseTydecs() {
-  A_Tydec *d;
-  A_Tydecs *ds;
+  struct A_Tydec *d;
+  struct A_Tydecs *ds;
   d = ParseTydec();
   if (curtok->tok == TOK_TYPE) {
     ds = ParseTydecs();
@@ -905,7 +905,7 @@ struct A_Tydecs *ParseTydecs() {
 
 struct A_Tydec *ParseTydec() {
   char *id;
-  A_Ty *t;
+  struct A_Ty *t;
   assert(curtok->tok == TOK_TYPE);
   nexttok();
   id = curtok->id;
@@ -917,7 +917,7 @@ struct A_Tydec *ParseTydec() {
 
 struct A_Ty *ParseTy() {
   char *id;
-  A_Tyfields *ty;
+  struct A_Tyfields *ty;
   switch (curtok->tok) {
     case TOK_ID:
       id = curtok->id;
@@ -1031,7 +1031,7 @@ struct A_Fundec *ParseFundec() {
 struct A_Program *ParseProgram() {
   nexttok();
   switch (curtok->tok) {
-    case NULL: return A_Program_Epsilon();
+    case 0: return A_Program_Epsilon();
     default: return A_Program_Exp(ParseExp());
   }
 }

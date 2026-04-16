@@ -171,7 +171,7 @@ struct A_Lvalue_Tail {
   } kind;
 
   union {
-    struct {struct A_Exp *exp; struct A_Lvalue_Tail *tail} exp;
+    struct {struct A_Exp *exp; struct A_Lvalue_Tail *tail;} exp;
     struct {char id[20]; struct A_Lvalue_Tail *tail;} id;
   } u;
 };

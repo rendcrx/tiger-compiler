@@ -11,5 +11,5 @@ int main() {
   char *cont = malloc(s);
   fread(cont, s, 1, i);
   GenTokens(cont);
-  Parse();
+  struct A_Program *p = ParseProgram();
 }
