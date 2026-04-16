@@ -140,19 +140,39 @@ struct A_Letexp {
 /*             | id [ exp ] */
 /*             | lvalue [ exp ] */
 /*             | lvalue . id */
+
+
+/* lvalue → id */
+/*        | id [ exp ] lvalue_tail */
+/*        | id . id lvalue_tail */
+
+/* lvalue_tail → [ exp ] lvalue_tail */
+/*             | . id lvalue_tail */
+/*             | ε */
 struct A_Lvalue {
   enum {
     A_LVALUE_ID,
     A_LVALUE_IDEXP,
-    A_LVALUE_LEXP,
-    A_LVALUE_LID
+    A_LVALUE_IDID
   } kind;
 
   union {
     char id[20];
-    struct {char id[20]; struct A_Exp *exp;} idexp; 
-    struct {struct A_Lvalue *lvalue; struct A_Exp *exp;} lexp;
-    struct {struct A_Lvalue *lvalue; char id[20];} lid;
+    struct {char id[20]; struct A_Exp *exp; struct A_Lvalue_Tail *tail;} idexp; 
+    struct {char id1[20]; char id2[20]; struct A_Lvalue_Tail *tail;} idid;
+  } u;
+};
+
+struct A_Lvalue_Tail {
+  enum {
+    A_LVALUE_TAIL_EXP,
+    A_LVALUE_TAIL_ID,
+    A_LVALUE_TAIL_EPSILON
+  } kind;
+
+  union {
+    struct {struct A_Exp *exp; struct A_Lvalue_Tail *tail} exp;
+    struct {char id[20]; struct A_Lvalue_Tail *tail;} id;
   } u;
 };
 
@@ -383,9 +403,11 @@ struct A_Condexp *A_Condexp_For(char id[], struct A_Exp *e1, struct A_Exp *e2, s
 struct A_Letexp *A_Letexp(struct A_Decs *decs, struct A_Expseq *expseq);
 
 struct A_Lvalue *A_Lvalue_Id(char id[]);
-struct A_Lvalue *A_Lvalue_Idexp(char *id, struct A_Exp *exp);
-struct A_Lvalue *A_Lvalue_Lexp(struct A_Lvalue *lvalue, struct A_Exp *exp);
-struct A_Lvalue *A_Lvalue_Lid(struct A_Lvalue *lvalue, char *id);
+struct A_Lvalue *A_Lvalue_Idexp(char *id, struct A_Exp *exp, struct A_Lvalue_Tail *tail);
+struct A_Lvalue *A_Lvalue_Idid(char *id1, char *id2, struct A_Lvalue_Tail *tail);
+struct A_Lvalue_Tail *A_Lvalue_Tail_Exp(struct A_Exp *exp, struct A_Lvalue_Tail *tail);
+struct A_Lvalue_Tail *A_Lvalue_Tail_Id(char *id, struct A_Lvalue_Tail *tail);
+struct A_Lvalue_Tail *A_Lvalue_Tail_Epsilon();
 
 struct A_Arglist *A_Arglist_Epsilon();
 struct A_Arglist *A_Arglist_Nonarglist(struct A_Nonarglist *nonarglist);
@@ -440,6 +462,7 @@ struct A_Exp *ParseExp();
 struct A_Condexp *ParseCondexp();
 struct A_Letexp *ParseLetexp();
 struct A_Lvalue *ParseLvalue();
+struct A_Lvalue_Tail *ParseLvalueTail();
 struct A_Arglist *ParseArglist();
 struct A_Nonarglist *ParseNonarglist();
 struct A_Reclist *ParseReclist();

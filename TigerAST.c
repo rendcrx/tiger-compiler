@@ -1,12 +1,13 @@
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include "TigerAST.h"
 #include "Lex.h"
 
 static struct Token *curtok;
+static int i;
 
 static void nexttok() {
-  static int i;
   if (i >= tokens_size)
     curtok = NULL;
   else
@@ -14,7 +15,6 @@ static void nexttok() {
 }
 
 static void expecttok(int class) {
-  static int i;
   if (i >= tokens_size)
     curtok = NULL;
   else
@@ -282,27 +282,43 @@ struct A_Lvalue *A_Lvalue_Id(char id[]) {
   return l;
 }
 
-struct A_Lvalue *A_Lvalue_Idexp(char *id, struct A_Exp *exp) {
+struct A_Lvalue *A_Lvalue_Idexp(char *id, struct A_Exp *exp, struct A_Lvalue_Tail *tail) {
   struct A_Lvalue *l = malloc(sizeof *l);
   l->kind = A_LVALUE_IDEXP;
   strcpy(l->u.idexp.id, id);
   l->u.idexp.exp = exp;
+  l->u.idexp.tail = tail;
   return l;
 }
 
-struct A_Lvalue *A_Lvalue_Lexp(struct A_Lvalue *lvalue, struct A_Exp *exp) {
+struct A_Lvalue *A_Lvalue_Idid(char *id1, char *id2, struct A_Lvalue_Tail *tail) {
   struct A_Lvalue *l = malloc(sizeof *l);
-  l->kind = A_LVALUE_LEXP;
-  l->u.lexp.lvalue = lvalue;
-  l->u.lexp.exp = exp;
+  l->kind = A_LVALUE_IDID;
+  strcpy(l->u.idid.id1, id1);
+  strcpy(l->u.idid.id2, id2);
+  l->u.idid.tail = tail;
   return l;
 }
 
-struct A_Lvalue *A_Lvalue_Lid(struct A_Lvalue *lvalue, char *id) {
-  struct A_Lvalue *l = malloc(sizeof *l);
-  l->kind = A_LVALUE_LID;
-  l->u.lid.lvalue = lvalue;
-  strcpy(l->u.lid.id, id);
+struct A_Lvalue_Tail *A_Lvalue_Tail_Exp(struct A_Exp *exp, struct A_Lvalue_Tail *tail) {
+  struct A_Lvalue_Tail *l = malloc(sizeof *l);
+  l->kind = A_LVALUE_TAIL_EXP;
+  l->u.exp.exp = exp;
+  l->u.exp.tail = tail;
+  return l;
+}
+
+struct A_Lvalue_Tail *A_Lvalue_Tail_Id(char *id, struct A_Lvalue_Tail *tail) {
+  struct A_Lvalue_Tail *l = malloc(sizeof *l);
+  l->kind = A_LVALUE_TAIL_ID;
+  strcpy(l->u.id.id, id);
+  l->u.id.id.tail = tail;
+  return l;
+}
+
+struct A_Lvalue_Tail *A_Lvalue_Tail_Epsilon() {
+  struct A_Lvalue_Tail *l = malloc(sizeof *l);
+  l->kind = A_LVALUE_TAIL_EPSILON;
   return l;
 }
 
@@ -549,117 +565,473 @@ struct A_Fundec *A_Fundec_Idid(char *id1, struct A_Tyfields *tyfields, char *id2
   return f;
 }
 
-struct A_Exp *ParseExp() {
-  struct Token *p;
-  struct A_Exp *e;
-  char *a1;
+static struct A_Exp *Parse_Primary_Exp() {
+  int num;
+  struct A_Exp *e, *p, *q;
+  char *id, *id2;
+  struct A_Reclist *r;
+  struct A_Expseq *x;
+  struct A_Lvalue *l;
+  struct A_Lvalue_Tail *lt;
+  struct A_Condexp *c;
+  struct A_Decs *d;
+  struct A_Expseq *s;
   switch (curtok->tok) {
     case TOK_INT:
-      e = A_Exp_Int(curtok->num);
-      break;
+      num = curtok->num;
+      nexttok();
+      return A_Exp_Int(num);
     case TOK_STR:
-      e = A_Exp_String(cutrok->id);
-      break;
+      id = curtok->id;
+      nexttok();
+      return A_Exp_String(id);
     case TOK_NIL:
-      e = A_Exp_Nil();
-      break;
+      nexttok();
+      return A_Exp_Nil();
     case TOK_ID:
-      p = peer();
-      switch (p) {
+      id = curtok->id;
+      nexttok();
+      switch (curtok->tok) {
         case '(':
-          a1 = e->id;
-          expecttok('(');
           nexttok();
-          e = A_Exp_Id(a1, ParseArglist());
-          break;
+          e = A_Exp_Id(id, ParseArglist());
+          assert(curtok->tok == ')');
+          nexttok();
+          return e;
         case '[':
+          nexttok();
+          e = ParseExp();
+          assert(curtok->tok == ']');
+          nexttok();
+          switch (curtok->tok) {
+            case TOK_OF:
+              p = ParseExp();
+              return A_Exp_Of(id, e, p);
+            default:
+              lt = ParseLvalueTail();
+              l = A_Lvalue_Idexp(id, e, lt);
+              goto assign;
+          }
         case '{':
-        default: e = A_Exp_Lvalue(ParseLvalue()); break;
+          nexttok();
+          r = ParseReclist();
+          assert(curtok->tok == '}');
+          nexttok();
+          return A_Exp_Reclist(id, r);
+        case '.':
+          expecttok(TOK_ID);
+          id2 = curtok->id;
+          lt = ParseLvalueTail();
+          l = A_Lvalue_Idid(id, id2, lt);
+          goto assign;
+        default:
+          l = A_Lvalue_Id(id);
+          goto assign;
       }
-      break;
     case '(':
       nexttok();
-      e = A_Exp_Expseq(ParseExpseq());
-      break;
+      x = ParseExpseq();
+      assert(curtok->tok == ')');
+      nexttok();
+      return A_Exp_Expseq(x);
     case TOK_IF:
+      nexttok();
+      e = ParseExp();
+      assert(curtok->tok == TOK_THEN);
+      nexttok();
+      p = ParseExp();
+      if (curtok->tok == TOK_ELSE) {
+        nexttok();
+        q = ParseExp();
+        c = A_Condexp_Ifelse(e, p, q);
+        return A_Exp_Condexp(c);
+      }
+      c = A_Condexp_Ifthen(e, p);
+      return A_Exp_Condexp(c);
     case TOK_WHILE:
+      nexttok();
+      e = ParseExp();
+      assert(curtok->tok == TOK_DO);
+      p = ParseExp();
+      c = A_Condexp_While(e, p);
+      return A_Exp_Condexp(c);
     case TOK_FOR:
-      e = A_Exp_Condexp(ParseCondexp());
-      break;
+      nexttok();
+      assert(curtok->tok == TOK_ID);
+      id = curtok->id;
+      expecttok(TOK_ASSIGN);
+      nexttok();
+      e = ParseExp();
+      assert(curtok->tok == TOK_TO);
+      nexttok();
+      p = ParseExp();
+      assert(curtok->tok == TOK_DO);
+      q = ParseExp();
+      c = A_Condexp_For(id, e, p, q);
+      return A_Exp_Condexp(c);
     case TOK_LET:
-      e = A_Exp_Letexp(ParseLetexp());
-      break;
-    case TOK_STR:
-    case TOK_STR:
-    case TOK_STR:
-    case TOK_STR:
-    case TOK_STR:
+      nexttok();
+      d = ParseDecs();
+      assert(curtok->tok == TOK_IN);
+      nexttok();
+      s = ParseExpseq();
+      assert(curtok->tok == TOK_END);
+      nexttok();
+      return A_Exp_Letexp(A_Letexp(d, s));
+    case TOK_BREAK:
+      nexttok();
+      return A_Exp_Break();
+    default: assert(0);
   }
-  nexttok();
-  return e;
+assign:
+  assert(curtok->tok == TOK_ASSIGN);
+  p = ParseExp();
+  return A_Exp_Assign(l, p);
 }
 
-struct A_Condexp *ParseCondexp() {
+static struct A_Exp *Parse_Unary_Exp() {
+  if (curtok->tok == '-') {
+    nexttok();
+    return A_Exp_Singlesub(Parse_Primary_Exp());
+  }
+  return Parse_Primary_Exp();
 }
 
-struct A_Letexp *ParseLetexp() {
+static struct A_Exp *Parse_Mul_Exp() {
+  struct A_Exp *left, *right;
+  left = Parse_Unary_Exp();
+  switch (curtok->tok) {
+    case '*':
+      nexttok();
+      right = Parse_Mul_Exp();
+      return A_Exp_Times(left, right);
+    case '/':
+      nexttok();
+      right = Parse_Mul_Exp();
+      return A_Exp_Div(left, right);
+    default:
+      return left;
+  }
 }
 
-struct A_Lvalue *ParseLvalue() {
+static struct A_Exp *Parse_Add_Exp() {
+  struct A_Exp *left, *right;
+  left = Parse_Mul_Exp();
+  switch (curtok->tok) {
+    case '+':
+      nexttok();
+      right = Parse_Add_Exp();
+      return A_Exp_Add(left, right);
+    case '-':
+      nexttok();
+      right = Parse_Add_Exp();
+      return A_Exp_Sub(left, right);
+    default: return left;
+  }
+}
+
+static struct A_Exp *Parse_Cmp_Exp() {
+  struct A_Exp *left, *right;
+  left = Parse_Add_Exp();
+  switch (curtok->tok) {
+    case '<':
+      nexttok();
+      right = Parse_Add_Exp();
+      return A_Exp_Lt(left, right);
+    case '>':
+      nexttok();
+      right = Parse_Add_Exp();
+      return A_Exp_Gt(left, right);
+    case TOK_LE:
+      nexttok();
+      right = Parse_Add_Exp();
+      return A_Exp_Le(left, right);
+    case TOK_GE:
+      nexttok();
+      right = Parse_Add_Exp();
+      return A_Exp_Ge(left, right);
+    case '=':
+      nexttok();
+      right = Parse_Add_Exp();
+      return A_Exp_Eq(left, right);
+    case TOK_LG:
+      nexttok();
+      right = Parse_Add_Exp();
+      return A_Exp_Lg(left, right);
+    default: return left;
+  }
+}
+
+static struct A_Exp *Parse_And_Exp() {
+  struct A_Exp *left, *right;
+  left = Parse_Cmp_Exp();
+  if (curtok->tok == '&') {
+    nexttok();
+    right = Parse_And_Exp();
+    return A_Exp_And(left, right);
+  }
+  return left;
+}
+
+static struct A_Exp *Parse_Or_Exp() {
+  struct A_Exp *left, *right;
+  left = Parse_And_Exp();
+  if (curtok->tok == '|') {
+    nexttok();
+    right = Parse_Or_Exp();
+    return A_Exp_Or(left, right);
+  }
+  return left;
+}
+
+struct A_Exp *ParseExp() {
+  return Parse_Or_Exp();
+}
+
+struct A_Lvalue_Tail *ParseLvalueTail() {
+  struct A_Exp *e;
+  struct A_Lvalue_Tail *lt;
+  char *id;
+  if (curtok == NULL)
+    return A_Lvalue_Tail_Epsilon();
+  switch (curtok->tok) {
+    case '[':
+      nexttok();
+      e = ParseExp();
+      assert(curtok->tok == ']');
+      nexttok();
+      lt = ParseLvalueTail();
+      return A_Lvalue_Tail_Exp(e, lt);
+    case '.':
+      nexttok();
+      assert(curtok->tok == TOK_ID);
+      id = curtok->id;
+      nexttok();
+      lt = ParseLvalueTail();
+      return A_Lvalue_Tail_Id(id, lt);
+    default: return A_Lvalue_Tail_Epsilon();
+  }
 }
 
 struct A_Arglist *ParseArglist() {
+  if (curtok == NULL)
+    return A_Arglist_Epsilon();
+  return A_Arglist_Nonarglist(ParseNonarglist());
 }
 
 struct A_Nonarglist *ParseNonarglist() {
+  struct A_Exp *e;
+  struct A_Nonarglist *n;
+  e = ParseExp();
+  if (curtok->tok == ',') {
+    n = ParseNonarglist();
+    return A_Nonarglist_Expnonarglist(e, n);
+  }
+  return A_Nonarglist_Exp(e);
 }
 
 struct A_Reclist *ParseReclist() {
+  if (curtok == NULL)
+    return A_Reclist_Epsilon();
+  return A_Reclist_Nonreclist(ParseNonreclist());
 }
 
 struct A_Nonreclist *ParseNonreclist() {
+  char *id;
+  struct A_Exp *e;
+  struct A_Nonreclist *n;
+  assert(curtok->tok == TOK_ID);
+  id = curtok->id;
+  expecttok('=');
+  nexttok();
+  e = ParseExp();
+  if (curtok && curtok->tok == ',') {
+    nexttok();
+    n = ParseNonreclist();
+    return A_Nonreclist_Nonreclist(id, e, n);
+  }
+  return A_Nonreclist_Idexp(id, e);
 }
 
 struct A_Expseq *ParseExpseq() {
+  struct A_Exp *e;
+  struct A_Expseq *es;
+  if (curtok == NULL)
+    return A_Expseq_Epsilon();
+  e = ParseExp();
+  if (curtok->tok == ';') {
+    nexttok();
+    es = ParseExpseq();
+    return A_Expseq_Expseq(e, es);
+  }
+  return A_Expseq_Exp(e);
 }
 
 struct A_Decs *ParseDecs() {
+  struct A_Dec *d;
+  struct A_Decs *ds;
+  if (curtok == NULL)
+    return A_Decs_Epsilon();
+  d = ParseDec();
+  ds = ParseDecs();
+  return A_Decs_Decs(d, ds);
 }
 
 struct A_Dec *ParseDec() {
+  switch (curtok->tok) {
+    // tydecs
+    case TOK_TYPE:
+      return A_Dec_Tydecs(ParseTydecs());
+    // vardec
+    case TOK_VAR:
+      return A_Dec_Vardec(ParseVardec());
+    // fundecs:
+    case TOK_FUNCTION:
+      return A_Dec_Fundecs(ParseFundecs());
+    default: assert(0); 
+  }
 }
 
 struct A_Tydecs *ParseTydecs() {
+  A_Tydec *d;
+  A_Tydecs *ds;
+  d = ParseTydec();
+  if (curtok->tok == TOK_TYPE) {
+    ds = ParseTydecs();
+    return A_Tydecs_Tydecs(d, ds);
+  }
+  return A_Tydecs_Tydec(d);
 }
 
 struct A_Tydec *ParseTydec() {
+  char *id;
+  A_Ty *t;
+  assert(curtok->tok == TOK_TYPE);
+  nexttok();
+  id = curtok->id;
+  expecttok('=');
+  nexttok();
+  t = ParseTy();
+  return A_Tydec(id, t);
 }
 
 struct A_Ty *ParseTy() {
+  char *id;
+  A_Tyfields *ty;
+  switch (curtok->tok) {
+    case TOK_ID:
+      id = curtok->id;
+      nexttok();
+      return A_Ty_Id(id);
+    case '{':
+      nexttok();
+      ty = ParseTyfields();
+      expecttok('}');
+      nexttok();
+      return A_Ty_Tyfields(ty);
+    case TOK_ARRAY:
+      expecttok(TOK_OF);
+      nexttok();
+      assert(curtok->tok == TOK_ID);
+      id = curtok->id;
+      nexttok();
+      return A_Ty_Of(id);
+    default: assert(0);
+  }
 }
 
 struct A_Tyfields *ParseTyfields() {
+  if (curtok == NULL)
+    return A_Tyfields_Epsilon();
+  if (curtok->tok != TOK_ID)
+    return A_Tyfields_Epsilon();
+  return A_Tyfields_Tyfields(ParseTyfields1());
 }
 
 struct A_Tyfields1 *ParseTyfields1() {
+  struct A_Tyfield *t;
+  struct A_Tyfields1 *t1;
+  t = ParseTyfield();
+  if (curtok->tok == ',') {
+    t1 = ParseTyfields1();
+    return A_Tyfields1_Tyfield1(t, t1);
+  }
+  return A_Tyfields1_Tyfield(t);
 }
 
 struct A_Tyfield *ParseTyfield() {
+  char *id, *id2;
+  assert(curtok->tok == TOK_ID);
+  id = curtok->id;
+  expecttok(':');
+  expecttok(TOK_ID);
+  id2 = curtok->id;
+  return A_Tyfield(id, id2);
 }
 
 struct A_Vardec *ParseVardec() {
+  char *id, *id2;
+  struct A_Exp *e;
+  assert(curtok->tok == TOK_VAR);
+  expecttok(TOK_ID);
+  id = curtok->id;
+  nexttok();
+  if (curtok->tok == ':') {
+    expecttok(TOK_ID);
+    id2 = curtok->id;
+    expecttok(TOK_ASSIGN);
+    nexttok();
+    e = ParseExp();
+    return A_Vardec_Idid(id, id2, e);
+  } else if (curtok->tok == TOK_ASSIGN) {
+    nexttok();
+    e = ParseExp();
+    return A_Vardec_Id(id, e);
+  }
+  assert(0);
 }
 
 struct A_Fundecs *ParseFundecs() {
+  struct A_Fundec *f;
+  struct A_Fundecs *fs;
+  f = ParseFundec();
+  if (curtok->tok == TOK_FUNCTION) {
+    fs = ParseFundecs();
+    return A_Fundecs_Fundecs(f, fs);
+  }
+  return A_Fundecs_Fundec(f);
 }
 
 struct A_Fundec *ParseFundec() {
+  char *id, *id2;
+  struct A_Tyfields *ts;
+  struct A_Exp *e;
+  assert(curtok->tok == TOK_FUNCTION);
+  expecttok(TOK_ID);
+  id = curtok->id;
+  expecttok('(');
+  ts = ParseTyfields();
+  assert(curtok->tok == ')');
+  nexttok();
+  if (curtok->tok == '=') {
+    nexttok();
+    e = ParseExp();
+    return A_Fundec_Id(id, ts, e);
+  } else if (curtok->tok == ':') {
+    expecttok(TOK_ID);
+    id2 = curtok->id;
+    expecttok('=');
+    nexttok();
+    e = ParseExp();
+    return A_Fundec_Idid(id, ts, id2, e);
+  }
+  assert(0);
 }
 
 struct A_Program *ParseProgram() {
   nexttok();
   switch (curtok->tok) {
     case NULL: return A_Program_Epsilon();
-    default: return ParseExp();
+    default: return A_Program_Exp(ParseExp());
   }
 }
