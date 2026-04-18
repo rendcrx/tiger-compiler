@@ -621,6 +621,7 @@ static struct A_Exp *Parse_Primary_Exp() {
         case '.':
           expecttok(TOK_ID);
           id2 = curtok->id;
+          nexttok();
           lt = ParseLvalueTail();
           l = A_Lvalue_Idid(id, id2, lt);
           goto assign;
@@ -652,6 +653,7 @@ static struct A_Exp *Parse_Primary_Exp() {
       nexttok();
       e = ParseExp();
       assert(curtok->tok == TOK_DO);
+      nexttok();
       p = ParseExp();
       c = A_Condexp_While(e, p);
       return A_Exp_Condexp(c);
@@ -681,12 +683,15 @@ static struct A_Exp *Parse_Primary_Exp() {
     case TOK_BREAK:
       nexttok();
       return A_Exp_Break();
-    default: assert(0);
   }
 assign:
-  assert(curtok->tok == TOK_ASSIGN);
-  p = ParseExp();
-  return A_Exp_Assign(l, p);
+  if (curtok->tok == TOK_ASSIGN) {
+    nexttok();
+    p = ParseExp();
+    return A_Exp_Assign(l, p);
+  } else {
+    return A_Exp_Lvalue(l);
+  }
 }
 
 static struct A_Exp *Parse_Unary_Exp() {
@@ -700,6 +705,8 @@ static struct A_Exp *Parse_Unary_Exp() {
 static struct A_Exp *Parse_Mul_Exp() {
   struct A_Exp *left, *right;
   left = Parse_Unary_Exp();
+  if (curtok == NULL)
+    return left;
   switch (curtok->tok) {
     case '*':
       nexttok();
@@ -717,6 +724,8 @@ static struct A_Exp *Parse_Mul_Exp() {
 static struct A_Exp *Parse_Add_Exp() {
   struct A_Exp *left, *right;
   left = Parse_Mul_Exp();
+  if (curtok == NULL)
+    return left;
   switch (curtok->tok) {
     case '+':
       nexttok();
@@ -733,6 +742,8 @@ static struct A_Exp *Parse_Add_Exp() {
 static struct A_Exp *Parse_Cmp_Exp() {
   struct A_Exp *left, *right;
   left = Parse_Add_Exp();
+  if (curtok == NULL)
+    return left;
   switch (curtok->tok) {
     case '<':
       nexttok();
@@ -765,6 +776,8 @@ static struct A_Exp *Parse_Cmp_Exp() {
 static struct A_Exp *Parse_And_Exp() {
   struct A_Exp *left, *right;
   left = Parse_Cmp_Exp();
+  if (curtok == NULL)
+    return left;
   if (curtok->tok == '&') {
     nexttok();
     right = Parse_And_Exp();
@@ -776,6 +789,8 @@ static struct A_Exp *Parse_And_Exp() {
 static struct A_Exp *Parse_Or_Exp() {
   struct A_Exp *left, *right;
   left = Parse_And_Exp();
+  if (curtok == NULL)
+    return left;
   if (curtok->tok == '|') {
     nexttok();
     right = Parse_Or_Exp();
@@ -816,7 +831,21 @@ struct A_Lvalue_Tail *ParseLvalueTail() {
 struct A_Arglist *ParseArglist() {
   if (curtok == NULL)
     return A_Arglist_Epsilon();
-  return A_Arglist_Nonarglist(ParseNonarglist());
+  switch (curtok->tok) {
+    case TOK_INT:
+    case TOK_STR:
+    case TOK_NIL:
+    case TOK_ID:
+    case '(':
+    case TOK_IF:
+    case TOK_WHILE:
+    case TOK_FOR:
+    case TOK_LET:
+    case TOK_BREAK:
+    case '-':
+      return A_Arglist_Nonarglist(ParseNonarglist());
+    default: return A_Arglist_Epsilon();
+  }
 }
 
 struct A_Nonarglist *ParseNonarglist() {
@@ -824,6 +853,7 @@ struct A_Nonarglist *ParseNonarglist() {
   struct A_Nonarglist *n;
   e = ParseExp();
   if (curtok->tok == ',') {
+    nexttok();
     n = ParseNonarglist();
     return A_Nonarglist_Expnonarglist(e, n);
   }
@@ -873,6 +903,8 @@ struct A_Decs *ParseDecs() {
   if (curtok == NULL)
     return A_Decs_Epsilon();
   d = ParseDec();
+  if (d == NULL)
+    return A_Decs_Epsilon();
   ds = ParseDecs();
   return A_Decs_Decs(d, ds);
 }
@@ -888,7 +920,7 @@ struct A_Dec *ParseDec() {
     // fundecs:
     case TOK_FUNCTION:
       return A_Dec_Fundecs(ParseFundecs());
-    default: assert(0); 
+    default: return NULL;
   }
 }
 
@@ -907,7 +939,7 @@ struct A_Tydec *ParseTydec() {
   char *id;
   struct A_Ty *t;
   assert(curtok->tok == TOK_TYPE);
-  nexttok();
+  expecttok(TOK_ID);
   id = curtok->id;
   expecttok('=');
   nexttok();
@@ -926,7 +958,7 @@ struct A_Ty *ParseTy() {
     case '{':
       nexttok();
       ty = ParseTyfields();
-      expecttok('}');
+     assert(curtok->tok == '}');
       nexttok();
       return A_Ty_Tyfields(ty);
     case TOK_ARRAY:
@@ -953,6 +985,7 @@ struct A_Tyfields1 *ParseTyfields1() {
   struct A_Tyfields1 *t1;
   t = ParseTyfield();
   if (curtok->tok == ',') {
+    nexttok();
     t1 = ParseTyfields1();
     return A_Tyfields1_Tyfield1(t, t1);
   }
@@ -966,6 +999,7 @@ struct A_Tyfield *ParseTyfield() {
   expecttok(':');
   expecttok(TOK_ID);
   id2 = curtok->id;
+  nexttok();
   return A_Tyfield(id, id2);
 }
 
@@ -1010,6 +1044,7 @@ struct A_Fundec *ParseFundec() {
   expecttok(TOK_ID);
   id = curtok->id;
   expecttok('(');
+  nexttok();
   ts = ParseTyfields();
   assert(curtok->tok == ')');
   nexttok();
