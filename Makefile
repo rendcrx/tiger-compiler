@@ -1,3 +1,6 @@
+chapter5: main3.c TigerAST.c TigerAST.h Lex.h Symbol.c Symbol.h Table.h Table.c Makefile
+	cc -g -o chapter5 main3.c TigerAST.c Lex.c Symbol.c Table.c
+
 chapter3: main3.c TigerAST.c TigerAST.h Lex.h Makefile
 	cc -g -o chapter3 main3.c TigerAST.c Lex.c
 
@@ -8,4 +11,4 @@ chapter1: main.c AST.c AST.h Makefile
 	cc -g -o chapter1 main.c AST.c
 
 clean:
-	rm -f chapter*
+	rm -rf chapter*
